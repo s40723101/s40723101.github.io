@@ -725,23 +725,37 @@ def generate_pages():
         os.remove(os.path.join(_curdir + "\\content\\", f))
     # 這裡需要建立專門寫出 html 的 write_page
     # index.html
-    file = open(_curdir + "\\content\\index.html", "w", encoding="utf-8")
-    file.write(get_page2(None, newhead, 0))
-    file.close()
+    with open(_curdir + "\\content\\index.html", "w", encoding="utf-8") as f:
+        f.write(get_page2(None, newhead, 0))
     # sitemap
-    file = open(_curdir + "\\content\\sitemap.html", "w", encoding="utf-8")
-    # sitemap2 需要 newhead
-    file.write(sitemap2(newhead))
-    file.close()
+    with open(_curdir + "\\content\\sitemap.html", "w", encoding="utf-8") as f:
+        # sitemap2 需要 newhead
+        f.write(sitemap2(newhead))
     # 以下轉檔, 改用 newhead 數列
+
+    def visible(element):
+        if element.parent.name in ['style', 'script', '[document]', 'head', 'title']:
+            return False
+        elif re.match('<!--.*-->', str(element.encode('utf-8'))):
+            return False
+        return True
+
+    search_content = []
     for i in range(len(newhead)):
         # 在此必須要將頁面中的 /images/ 字串換為 images/, /downloads/ 換為 downloads/
         # 因為 Flask 中靠 /images/ 取檔案, 但是一般 html 則採相對目錄取檔案
         # 此一字串置換在 get_page2 中進行
-        file = open(_curdir + "\\content\\" + newhead[i] + ".html", "w", encoding="utf-8")
-        # 增加以 newhead 作為輸入
-        file.write(get_page2(newhead[i], newhead, 0))
-        file.close()
+        # 加入 tipue search 模式
+        get_page_content = []
+        html_doc = get_page2(newhead[i], newhead, 0, get_page_content)
+        soup = bs4.BeautifulSoup(" ".join(get_page_content), "lxml")
+        search_content.append({"title": newhead[i], "text": " ".join(filter(visible, soup.findAll(text=True))), "tags": "", "url": newhead[i] + ".html"})
+        with open(_curdir + "\\content\\" + newhead[i] + ".html", "w", encoding="utf-8") as f:
+            # 增加以 newhead 作為輸入
+            f.write(html_doc)
+    # GENERATE js file
+    with open(_curdir + "\\content\\tipuesearch_content.js", "w", encoding="utf-8") as f:
+        f.write("var tipuesearch = {\"pages\": " + str(search_content) + "};")
     # generate each page html under content directory
     return "已經將網站轉為靜態網頁. <a href='/'>Home</a>"
 # seperate page need heading and edit variables, if edit=1, system will enter edit mode
@@ -821,16 +835,22 @@ def get_page(heading, edit):
 @app.route('/get_page2/<heading>', defaults={'edit': 0})
 @app.route('/get_page2/<heading>/<int:edit>')
 '''
-def get_page2(heading, head, edit):
+# before add tipue search function
+#def get_page2(heading, head, edit):
+def get_page2(heading, head, edit, get_page_content = None):
     not_used_head, level, page = parse_content()
     # 直接在此將 /images/ 換為 ./../images/, /downloads/ 換為 ./../downloads/, 以 content 為基準的相對目錄設定
     page = [w.replace('/images/', './../images/') for w in page]
     page = [w.replace('/downloads/', './../downloads/') for w in page]
+    # 假如有 src="/static/ace/則換為 src="./../static/ace/
+    page = [w.replace('src="/static/', 'src="./../static/') for w in page]
     directory = render_menu2(head, level, page)
     if heading is None:
         heading = head[0]
     # 因為同一 heading 可能有多頁, 因此不可使用 head.index(heading) 搜尋 page_order
     page_order_list, page_content_list = search_content(head, page, heading)
+    if get_page_content is not None:
+        get_page_content.extend(page_content_list)
     return_content = ""
     pagedata = ""
     outstring = ""
@@ -869,8 +889,52 @@ def get_page2(heading, head, edit):
     
     # edit=0 for viewpage
     if edit == 0:
-        return set_css2() + "<div class='container'><nav>"+ \
-        directory + "</nav><section>" + return_content + "</section></div></body></html>"
+        return set_css2() + '''<div class='container'><nav>
+        '''+ \
+        directory + "<div id=\"tipue_search_content\">" + return_content + \
+        '''</div>
+        
+    <!-- footer -->
+      <div class="container">
+        <div class="row pt-3 mx-auto">
+            <p>
+            <!-- Link back to Colorlib can't be removed. Template is licensed under CC BY 3.0. -->
+            Copyright &copy;<script>document.write(new Date().getFullYear());</script> All rights reserved | This template is made with <i class="icon-heart" aria-hidden="true"></i> by <a href="https://colorlib.com" target="_blank" >Colorlib</a>
+            <!-- Link back to Colorlib can't be removed. Template is licensed under CC BY 3.0. -->
+            </p>
+        </div>
+      </div>
+    <!-- for footer -->
+    
+        </div> <!-- for site wrap -->
+            <!-- <script src="../static/chimper/js/jquery-3.3.1.min.js"></script> -->
+            <script src="../static/chimper/js/jquery-migrate-3.0.1.min.js"></script>
+            <script src="../static/chimper/js/jquery-ui.js"></script>
+            <script src="../static/chimper/js/popper.min.js"></script>
+            <script src="../static/chimper/js/bootstrap.min.js"></script>
+            <script src="../static/chimper/js/owl.carousel.min.js"></script>
+            <script src="../static/chimper/js/jquery.stellar.min.js"></script>
+            <script src="../static/chimper/js/jquery.countdown.min.js"></script>
+            <script src="../static/chimper/js/jquery.magnific-popup.min.js"></script>
+            <script src="../static/chimper/js/bootstrap-datepicker.min.js"></script>
+            <script src="../static/chimper/js/aos.js"></script>
+            <!--
+            <script src="../static/chimper/js/typed.js"></script>
+                    <script>
+                    var typed = new Typed('.typed-words', {
+                    strings: ["Web Apps"," WordPress"," Mobile Apps"],
+                    typeSpeed: 80,
+                    backSpeed: 80,
+                    backDelay: 4000,
+                    startDelay: 1000,
+                    loop: true,
+                    showCursor: true
+                    });
+                    </script>
+            -->
+            <script src="../static/chimper/js/main.js"></script>
+        </body></html>
+        '''
     # enter edit mode
     else:
         # check if administrator
@@ -1185,8 +1249,9 @@ return 'images/';
 @app.route('/')
 def index():
     head, level, page = parse_content()
-    # fix first Chinese heading error
-    return redirect("/get_page/" + urllib.parse.quote_plus(head[0]))
+    # 2018.12.13, 將空白轉為"+" 號, 會導致連線錯誤, 改為直接取頁面標題
+    #return redirect("/get_page/" + urllib.parse.quote_plus(head[0], encoding="utf-8"))
+    return redirect("/get_page/" + head[0])
     # the following will never execute
     directory = render_menu(head, level, page)
     if heading is None:
@@ -1400,12 +1465,11 @@ def logout():
 def parse_config():
     if not os.path.isfile(config_dir+"config"):
         # create config file if there is no config file
-        file = open(config_dir + "config", "w", encoding="utf-8")
         # default password is admin
         password="admin"
         hashed_password = hashlib.sha512(password.encode('utf-8')).hexdigest()
-        file.write("siteTitle:CMSimfly \npassword:"+hashed_password)
-        file.close()
+        with open(config_dir + "config", "w", encoding="utf-8") as f:
+            f.write("siteTitle:CMSimfly \npassword:"+hashed_password)
     config = file_get_contents(config_dir + "config")
     config_data = config.split("\n")
     site_title = config_data[0].split(":")[1]
@@ -1480,16 +1544,14 @@ def parse_content():
     # if no content.htm, generate a head 1 and content 1 file
     if not os.path.isfile(config_dir+"content.htm"):
         # create content.htm if there is no content.htm
-        File = open(config_dir + "content.htm", "w", encoding="utf-8")
-        File.write("<h1>head 1</h1>content 1")
-        File.close()
+        with open(config_dir + "content.htm", "w", encoding="utf-8") as f:
+            f.write("<h1>head 1</h1>content 1")
     subject = file_get_contents(config_dir+"content.htm")
     # deal with content without content
     if subject == "":
         # create content.htm if there is no content.htm
-        File = open(config_dir + "content.htm", "w", encoding="utf-8")
-        File.write("<h1>head 1</h1>content 1")
-        File.close()
+        with open(config_dir + "content.htm", "w", encoding="utf-8") as f:
+            f.write("<h1>head 1</h1>content 1")
         subject = "<h1>head 1</h1>content 1"
     # initialize the return lists
     head_list = []
@@ -1596,12 +1658,142 @@ def render_menu(head, level, page, sitemap=0):
     return directory
 def render_menu2(head, level, page, sitemap=0):
     """render menu for static site"""
+    site_title, password = parse_config()
+    directory = '''
+    <div class="site-wrap">
+
+    <div class="site-mobile-menu">
+      <div class="site-mobile-menu-header">
+        <div class="site-mobile-menu-close mt-3">
+          <span class="icon-close2 js-menu-toggle"></span>
+        </div>
+      </div>
+      <div class="site-mobile-menu-body"></div>
+    </div>
+    
+            <header class="site-navbar py-4 bg-white" role="banner">
+              <div class="container-fluid">
+                <div class="row align-items-center">
+                <h1>''' + site_title + '''</h1>
+                <div class="pl-4">
+                    <form>
+                    <input type="text" placeholder="Search" name="q" id="tipue_search_input" pattern=".{2,}" title="At least 2 characters" required>
+                    </form>
+                </div>
+                  <!-- <div class="col-11 col-xl-2">
+                    <h1 class="mb-0 site-logo"><a href="index.html" class="text-black h2 mb-0">''' + site_title + '''</a></h1> 
+                  </div>
+                  -->
+                  <div class="col-12 col-md-10 d-none d-xl-block">
+                    <nav class="site-navigation position-relative text-right" role="navigation">
+    '''
+    
+    # 從 level 數列第一個元素作為開端, 第一個一定非 level 1 不可
+    current_level = level[0]
+    # 若是 sitemap 則僅列出樹狀架構而沒有套用 css3menu 架構
+    if sitemap:
+        directory += '''<ul>
+<li>
+<form>
+<div class="tipue_search_group">
+<input type="text" name="q" id="tipue_search_input" pattern=".{2,}" title="At least 2 characters" required><button type="submit" class="tipue_search_button"><div class="tipue_search_icon">&#9906;</div></button>
+</div>
+</form>
+</li>
+        '''
+    else:
+        directory += '''<ul class='site-menu js-clone-nav mr-auto d-none d-lg-block'>'''
+    # 納入主頁與表單
+    directory += '''
+                        <li class="active has-children"><a href="index.html">Home</a>
+                        <ul class="dropdown">
+                            <li><a href="sitemap.html">Site Map</a></li>
+                            <li><a href="./../reveal/index.html">reveal</a></li>
+                            <li><a href="./../blog/index.html">blog</a></li>
+                        </ul>
+                      </li>
+                     '''
+    # 逐一配合 level 數列中的各標題階次, 一一建立對應的表單或 sitemap
+    for index in range(len(head)):
+        # 用 this_level 取出迴圈中逐一處理的頁面對應層級, 注意取出值為 str
+        this_level = level[index]
+        # 若處理中的層級比上一層級高超過一層, 則將處理層級升級 (處理 h1 後直接接 h3 情況)
+        if (int(this_level) - int(current_level)) > 1:
+            #this_level = str(int(this_level) - 1)
+            # 考慮若納入 h4 也作為標題標註, 相鄰層級可能大於一層, 因此直接用上一層級 + 1
+            this_level = str(int(current_level) + 1)
+        # 若處理的階次比目前已經處理的階次大, 表示位階較低
+        # 其實當 level[0] 完全不會報告此一區塊
+        # 從正在處理的標題階次與前一個元素比對, 若階次低, 則要加入另一區段的 unordered list 標頭
+        # 兩者皆為 str 會轉為整數後比較
+        # 目前的位階在上一個標題之後
+        if this_level > current_level:
+            directory += "<ul class='dropdown'>"
+            # 是否加上 class=has-children, 視下一個而定
+            # 目前處理的標題, 並不是最後一個, 因此有下一個標題待處理
+            if index < (len(head)-1):
+                next_level = level[index+1]
+                if this_level < next_level:
+                    # 表示要加上 class=dropdown
+                    directory += "<li class='has-children'><a href='" + head[index] + ".html'>" + head[index] + "</a>"
+                else:
+                    directory += "<li><a href='" + head[index] + ".html'>" + head[index] + "</a>"
+            else:
+                #表示為最後一個
+                directory += "<li><a href='" + head[index] + ".html'>" + head[index] + "</a>"
+        # 假如正在處理的標題與前一個元素同位階, 則必須再判定是否為另一個 h1 的樹狀頭
+        # 目前標題與上一個標題相同
+        elif this_level == current_level:
+            # 是否加上 class=has-children, 視下一個而定
+            # 目前處理的標題, 並不是最後一個, 因此有下一個標題待處理
+            if index < (len(head)-1):
+                next_level = level[index+1]
+                if this_level < next_level:
+                    # 表示要加上 class=dropdown
+                    directory += "<li class='has-children'><a href='" + head[index] + ".html'>" + head[index] + "</a>"
+                else:
+                    directory += "<li><a href='" + head[index] + ".html'>" + head[index] + "</a>"
+            else:
+                #表示為最後一個
+                directory += "<li><a href='" + head[index] + ".html'>" + head[index] + "</a>"
+        # 假如正處理的元素比上一個元素位階更高, 必須要先關掉前面的低位階區段
+        else:
+            directory += "</li>"*(int(current_level) - int(level[index]))
+            directory += "</ul>"*(int(current_level) - int(level[index]))
+            if index < (len(head)-1):
+                next_level = level[index+1]
+                if this_level < next_level:
+                    # 表示要加上 class=dropdown
+                    directory += "<li class='has-children'><a href='" + head[index] + ".html'>" + head[index] + "</a>"
+                else:
+                    directory += "<li><a href='" + head[index] + ".html'>" + head[index] + "</a>"
+            else:
+                #表示為最後一個
+                directory += "<li><a href='" + head[index] + ".html'>" + head[index] + "</a>"
+        current_level = this_level
+    directory += '''</li>
+                      </ul>
+                </nav>
+              </div>
+              <div class="d-inline-block d-xl-none ml-md-0 mr-auto py-3" style="position: relative; top: 3px;"><a href="#" class="site-menu-toggle js-menu-toggle text-black"><span class="icon-menu h3"></span></a></div>
+              </div>
+
+            </div>
+          </div>
+          
+        </header>
+    '''
+    return directory
+def render_menu3(head, level, page, sitemap=0):
+    """render menu for static sitemap"""
     directory = ""
     current_level = level[0]
     if sitemap:
         directory += "<ul>"
     else:
-        directory += "<ul id='css3menu1' class='topmenu'>"
+        # before add tipue search function
+        #directory += "<ul id='css3menu1' class='topmenu'>"
+        directory += "<ul id='css3menu1' class='topmenu'><div class=\"tipue_search_group\"><input style=\"width: 6vw;\" type=\"text\" name=\"q\" id=\"tipue_search_input\" pattern=\".{2,}\" title=\"Press enter key to search\" required></div>"
     for index in range(len(head)):
         this_level = level[index]
         # 若處理中的層級比上一層級高超過一層, 則將處理層級升級 (處理 h1 後直接接 h3 情況)
@@ -1672,6 +1864,9 @@ def saveConfig():
 def savePage():
     """save all pages function"""
     page_content = request.form['page_content']
+    # when element_format : "html", need to remove the annoying comment to prevent brython exec
+    page_content = [w.replace('// <![CDATA[', '') for w in page_content]
+    page_content = [w.replace('// ]]>', '') for w in page_content]
     # check if administrator
     if not isAdmin():
         return redirect("/login")
@@ -1679,22 +1874,10 @@ def savePage():
         return error_log("no content to save!")
     # 在插入新頁面資料前, 先複製 content.htm 一分到 content_backup.htm
     shutil.copy2(config_dir + "content.htm", config_dir + "content_backup.htm")
-    file = open(config_dir + "content.htm", "w", encoding="utf-8")
     # in Windows client operator, to avoid textarea add extra \n
     page_content = page_content.replace("\n","")
-    file.write(page_content)
-    file.close()
-
-    # if every savePage generate_pages needed
-    #generate_pages()
-    '''
-    # need to parse_content() to eliminate duplicate heading
-    head, level, page = parse_content()
-    file = open(config_dir + "content.htm", "w", encoding="utf-8")
-    for index in range(len(head)):
-        file.write("<h" + str(level[index])+ ">" + str(head[index]) + "</h" + str(level[index]) + ">" + str(page[index]))
-    file.close()
-    '''
+    with open(config_dir + "content.htm", "w", encoding="utf-8") as f:
+        f.write(page_content)
     return redirect("/edit_page")
 
 
@@ -1785,7 +1968,7 @@ def set_admin_css():
     outstring = '''<!doctype html>
 <html><head>
 <meta http-equiv="content-type" content="text/html;charset=utf-8">
-<title>期末分組專案</title> \
+<title>''' + init.Init.site_title + '''</title> \
 <link rel="stylesheet" type="text/css" href="/static/cmsimply.css">
 ''' + syntaxhighlight()
 
@@ -1836,8 +2019,9 @@ def set_css():
     outstring = '''<!doctype html>
 <html><head>
 <meta http-equiv="content-type" content="text/html;charset=utf-8">
-<title>期末分組專案</title> \
+<title>''' + init.Init.site_title + '''</title> \
 <link rel="stylesheet" type="text/css" href="/static/cmsimply.css">
+<link rel="shortcut icon" href="/static/favicons.png">
 ''' + syntaxhighlight()
 
     outstring += '''
@@ -1890,42 +2074,73 @@ window.location= 'https://' + location.host + location.pathname + location.searc
 
 def set_css2():
     """set css for static site"""
-    outstring = '''<!doctype html>
-<html><head>
-<meta http-equiv="content-type" content="text/html;charset=utf-8">
-<title>期末分組專案</title> \
-<link rel="stylesheet" type="text/css" href="./../static/cmsimply.css">
-''' + syntaxhighlight2()
+    static_head = '''
+        <head>
+        <title>''' + init.Init.site_title + '''</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+        <link href="https://fonts.googleapis.com/css?family=Quicksand:300,400,500,700,900" rel="stylesheet">
+        <link rel="stylesheet" href="./../static/chimper/fonts/icomoon/style.css">
+        <link rel="stylesheet" href="./../static/chimper/css/bootstrap.min.css">
+        <link rel="stylesheet" href="./../static/chimper/css/magnific-popup.css">
+        <link rel="stylesheet" href="./../static/chimper/css/jquery-ui.css">
+        <link rel="stylesheet" href="./../static/chimper/css/owl.carousel.min.css">
+        <link rel="stylesheet" href="./../static/chimper/css/owl.theme.default.min.css">
+        <link rel="stylesheet" href="./../static/chimper/css/bootstrap-datepicker.css">
+        <link rel="stylesheet" href="./../static/chimper/fonts/flaticon/font/flaticon.css">
+        <link rel="stylesheet" href="./../static/chimper/css/aos.css">
+        <link rel="stylesheet" href="./../static/chimper/css/style.css">
+        <link rel="shortcut icon" href="./../static/favicons.png">
+        
+        <style type='text/css'>
+            .site-section {
+            background-color: #FFFF;
+            padding: 40px 40px;
+            }
+            body > div > div.dropdown.open {
+                display: block;
+            }
+        </style>
+    '''
+    outstring = '''<!DOCTYPE html><html>''' + static_head + '''
+        <!-- <script src="./../static/jquery.js"></script> -->
+        <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script> -->
+        <script src="../static/chimper/js/jquery-3.3.1.min.js"></script>
+        <link rel="stylesheet" href="./../static/tipuesearch/css/normalize.min.css">
+        <script src="./../static/tipuesearch/tipuesearch_set.js"></script>
+        <script src="tipuesearch_content.js"></script>
+        <link rel="stylesheet" href="./../static/tipuesearch/css/tipuesearch.css">
+        <script src="./../static/tipuesearch/tipuesearch.js"></script>
+        <script>
+            /* original tipuesearch
+            $(document).ready(function() {
+                 $('#tipue_search_input').tipuesearch();
+            });
+            */
+            // customed doSearch
+            function doSearch() {
+                $('#tipue_search_input').tipuesearch({
+                    newWindow: true, 
+                    minimumLength: 2,
+                    wholeWords: false, // for search 中文
+                });
+            }
+            $(document).ready(doSearch);
+        </script>
+        ''' + syntaxhighlight2()
 
-    outstring += '''
-<script src="./../static/jquery.js"></script>
-<script type="text/javascript">
-$(function(){
-    $("ul.topmenu> li:has(ul) > a").append('<div class="arrow-right"></div>');
-    $("ul.topmenu > li ul li:has(ul) > a").append('<div class="arrow-right"></div>');
-});
-</script>
-'''
+    site_title, password = parse_config()
     if uwsgi:
         outstring += '''
 <script type="text/javascript">
 if ((location.href.search(/http:/) != -1) && (location.href.search(/login/) != -1)) \
 window.location= 'https://' + location.host + location.pathname + location.search;
-</script>
+</script></head><body>
 '''
-    site_title, password = parse_config()
-    outstring += '''
-</head><header><h1>''' + site_title + '''</h1> \
-<confmenu>
-<ul>
-<li><a href="index.html">Home</a></li>
-<li><a href="sitemap.html">Site Map</a></li>
-<li><a href="./../reveal/index.html">reveal</a></li>
-<li><a href="./../blog/index.html">blog</a></li>
-'''
-    outstring += '''
-</ul>
-</confmenu></header>
+    else:
+        outstring += '''
+</head>
+<body>
 '''
     return outstring
 
@@ -1956,9 +2171,11 @@ def sitemap2(head):
     edit = 0
     not_used_head, level, page = parse_content()
     directory = render_menu2(head, level, page)
-    sitemap = render_menu2(head, level, page, sitemap=1)
+    # 先改為使用 render_menu3 而非 render_menu2
+    sitemap = render_menu3(head, level, page, sitemap=1)
+    # add tipue search id
     return set_css2() + "<div class='container'><nav>" + directory + \
-             "</nav><section><h1>Site Map</h1>" + sitemap + \
+             "</nav><section><h1>Site Map</h1><div id=\"tipue_search_content\"></div>" + sitemap + \
              "</section></div></body></html>"
 
 
@@ -1973,6 +2190,9 @@ def sizeof_fmt(num):
 def ssavePage():
     """seperate save page function"""
     page_content = request.form['page_content']
+    # when element_format : "html", need to remove the annoying comment to prevent brython exec
+    page_content = page_content.replace('// <![CDATA[', '')
+    page_content = page_content.replace('// ]]>', '')
     page_order = request.form['page_order']
     if not isAdmin():
         return redirect("/login")
@@ -2003,12 +2223,15 @@ def ssavePage():
     # 嘗試避免因最後一個標題刪除儲存後產生 internal error 問題
     if original_head_title is None:
         return redirect("/")
-    if original_head_title == head[int(page_order)]:
-        #edit_url = "/get_page/" + urllib.parse.quote_plus(head[int(page_order)]) + "&edit=1"
-        #edit_url = "/get_page/" + urllib.parse.quote_plus(original_head_title) + "/1"
-        edit_url = "/get_page/" + original_head_title + "/1"
-        return redirect(edit_url)
-    else:
+    try:
+        if original_head_title == head[int(page_order)]:
+            #edit_url = "/get_page/" + urllib.parse.quote_plus(head[int(page_order)]) + "&edit=1"
+            #edit_url = "/get_page/" + urllib.parse.quote_plus(original_head_title) + "/1"
+            edit_url = "/get_page/" + original_head_title + "/1"
+            return redirect(edit_url)
+        else:
+            return redirect("/")
+    except:
         return redirect("/")
 
 
